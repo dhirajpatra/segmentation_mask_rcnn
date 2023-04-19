@@ -16,14 +16,19 @@ while True:
     if not ret:
         break
 
-    height, width, _ = img.shape
+    # convert image to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    height, width = gray.shape
+
+    # height, width, _ = img.shape
 
     # create black image
     black_image = np.zeros((height, width, 3), np.uint8)
     black_image[:] = (100, 100, 0)
 
     # detect object
-    blob = cv2.dnn.blobFromImage(img, swapRB=True)
+    blob = cv2.dnn.blobFromImage(gray, swapRB=True)
     net.setInput(blob)
 
     boxes, masks = net.forward(["detection_out_final", "detection_masks"])
@@ -56,7 +61,7 @@ while True:
 
         if class_id < len(colors):
             color = colors[int(class_id)]
-            cv2.rectangle(img, (x, y), (x2, y2), tuple([int(c) for c in color]) + (0,), 3)
+            cv2.rectangle(gray, (x, y), (x2, y2), tuple([int(c) for c in color]) + (0,), 3)
 
         # set mask coordinates
         mask_array = np.array(mask, np.uint8)
@@ -70,9 +75,9 @@ while True:
     fontScale = 1.5
     color = (255, 0, 0)  # BGR color format
     thickness = 2  
-    cv2.putText(img, text, org, font, fontScale, color, thickness)
+    cv2.putText(gray, text, org, font, fontScale, color, thickness)
     
-    cv2.imshow("Mask R-CNN Output", img)
+    cv2.imshow("Mask R-CNN Output", gray)
     if cv2.waitKey(1) == ord('q'):
         break
 cv2.destroyAllWindows()
