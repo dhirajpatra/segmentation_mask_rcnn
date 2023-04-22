@@ -1,66 +1,122 @@
-import cv2
+# Code adapted from Tensorflow Object Detection Framework
+# https://github.com/tensorflow/models/blob/master/research/object_detection/object_detection_tutorial.ipynb
+# Tensorflow Object Detection Detector
+
 import numpy as np
+import tensorflow as tf
+import cv2
+import time
 
-# load mask r-cnn
-net = cv2.dnn.readNetFromTensorflow("frozen_inference_graph_coco.pb", "mask_rcnn_inception_v2_coco_2018_01_28.pbtxt")
 
-# generate random color
-colors = np.random.randint(0, 255, (80, 3))
-print(colors)
+class DetectorAPI:
+    def __init__(self, path_to_ckpt):
+        self.path_to_ckpt = path_to_ckpt
 
-# open video capture
-cap = cv2.VideoCapture(0)
+        self.detection_graph = tf.compat.v1.Graph()
+        with self.detection_graph.as_default():
+            od_graph_def = tf.compat.v1.GraphDef()
+            with tf.io.gfile.GFile(self.path_to_ckpt, "rb") as fid:
+                serialized_graph = fid.read()
+                od_graph_def.ParseFromString(serialized_graph)
+                tf.import_graph_def(od_graph_def, name="")
 
-while True:
-    # read frame
-    ret, frame = cap.read()
-    if not ret:
-        break
+        self.default_graph = self.detection_graph.as_default()
+        self.sess = tf.compat.v1.Session(graph=self.detection_graph)
 
-    height, width, _ = frame.shape
+        # Definite input and output Tensors for detection_graph for human
+        self.image_tensor = self.detection_graph.get_tensor_by_name("image_tensor:0")
+        # Each box represents a part of the image where a particular object was detected.
+        self.detection_boxes = self.detection_graph.get_tensor_by_name(
+            "detection_boxes:0"
+        )
+        # Each score represent how level of confidence for each of the objects.
+        # Score is shown on the result image, together with the class label.
+        self.detection_scores = self.detection_graph.get_tensor_by_name(
+            "detection_scores:0"
+        )
+        self.detection_classes = self.detection_graph.get_tensor_by_name(
+            "detection_classes:0"
+        )
+        self.num_detections = self.detection_graph.get_tensor_by_name(
+            "num_detections:0"
+        )
 
-    # detect object
-    blob = cv2.dnn.blobFromImage(frame, swapRB=True)
-    net.setInput(blob)
+    def processFrame(self, image):
+        # Expand dimensions since the trained_model expects images to have shape: [1, None, None, 3]
+        image_np_expanded = np.expand_dims(image, axis=0)
+        # Actual detection.
+        # start_time = time.time()
+        (boxes, scores, classes, num) = self.sess.run(
+            [
+                self.detection_boxes,
+                self.detection_scores,
+                self.detection_classes,
+                self.num_detections,
+            ],
+            feed_dict={self.image_tensor: image_np_expanded},
+        )
+     
+        # end_time = time.time()
 
-    boxes, masks = net.forward(["detection_out_final", "detection_masks"])
-    detection_count = boxes.shape[2]
+        # print("Elapsed Time:", end_time - start_time)
 
-    for i in range(detection_count):
-        box = boxes[0, 0, i]
-        class_id = box[1]
-        score = box[2]
-        if score < 0.5:
-            continue
+        im_height, im_width, _ = image.shape
+        boxes_list = [None for i in range(boxes.shape[1])]
+        for i in range(boxes.shape[1]):
+            boxes_list[i] = (
+                int(boxes[0, i, 0] * im_height),
+                int(boxes[0, i, 1] * im_width),
+                int(boxes[0, i, 2] * im_height),
+                int(boxes[0, i, 3] * im_width),
+            )
 
-        # get box coordinates
-        x = int(box[3] * width)
-        y = int(box[4] * height)
-        x2 = int(box[5] * width)
-        y2 = int(box[6] * height)
+        return (
+            boxes_list,
+            scores[0].tolist(),
+            [int(x) for x in classes[0].tolist()],
+            int(num[0]),
+        )
 
-        roi = frame[y: y2, x: x2]
-        roi_height, roi_width, _ = roi.shape
+    def close(self):
+        self.sess.close()
+        self.default_graph.close()
 
-        # get the mask
-        mask = masks[i, int(class_id)]
-        mask = cv2.resize(mask, (roi_width, roi_height))
-        _, mask = cv2.threshold(mask, 0.5, 255, cv2.THRESH_BINARY)
 
-        if class_id < len(colors):
-            color = colors[int(class_id)]
-            color = tuple(map(int, color))
-            cv2.rectangle(frame, (x, y), (x2, y2), color, 2)
-            cv2.putText(frame, str(class_id), (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, tuple(color), 2)
+if __name__ == "__main__":
+    model_path = (
+        "frozen_inference_graph.pb"
+    )
+    odapi = DetectorAPI(path_to_ckpt=model_path)
+    threshold = 0.7
+    cap = cv2.VideoCapture(0)
 
-        # set mask coordinates
-        contours, _ = cv2.findContours(np.array(mask, np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            cv2.drawContours(frame, [contour + (x, y)], 0, color, 2)
+    while True:
+        r, img = cap.read()
+        img = cv2.resize(img, (800, 600))
 
-    cv2.imshow("Mask R-CNN Output", frame)
-    if cv2.waitKey(1) == ord('q'):
-        break
+        boxes, scores, classes, num = odapi.processFrame(img)
 
-cap.release()
-cv2.destroyAllWindows()
+        object_count = 0  # initialize object count
+        # Visualization of the results of a detection.
+        for i in range(len(boxes)):
+            # Class 1 represents human
+            if classes[i] == 1 and scores[i] > threshold:
+                box = boxes[i]
+                cv2.rectangle(img, (box[1], box[0]), (box[3], box[2]), (255, 0, 0), 2)
+
+                object_count += 1  # increment object count
+
+        # Add the text to the image
+        # Set font and text parameters
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text = str(object_count) + ' persons detected'
+        org = (50, 50)
+        fontScale = 1.5
+        color = (255, 0, 0)  # BGR color format
+        thickness = 2  
+        cv2.putText(img, text, org, font, fontScale, color, thickness)
+
+        cv2.imshow("preview", img)
+        key = cv2.waitKey(1)
+        if key & 0xFF == ord("q"):
+            break

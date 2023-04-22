@@ -1,5 +1,24 @@
+import sys
+import time
+import datetime
+import os, subprocess
 import cv2
+from PIL import Image
 import numpy as np
+
+
+# Visualization parameters
+_ROW_SIZE = 20  # pixels
+_LEFT_MARGIN = 10  # pixels
+_TEXT_COLOR = (0, 0, 255)  # red
+_TEXT_COLOR_FINAL = (0, 255, 255)  # yellow
+_FONT_SIZE = 1
+_FONT_THICKNESS = 1
+_TARGET_SIZE = (256, 256)
+IMAGE_WIDTH = 600
+IMAGE_HEIGHT = 480
+_TIME_GAP = 10
+_SCORE_TOTAL = 0
 
 # load mask r-cnn
 net = cv2.dnn.readNetFromTensorflow("frozen_inference_graph_coco.pb", "mask_rcnn_inception_v2_coco_2018_01_28.pbtxt")
@@ -9,16 +28,19 @@ colors = np.random.randint(0, 255, (80, 3))
 
 # open video capture
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FPS, 4)
 
 while True:
     # read frame
     ret, img = cap.read()
+    print(ret)
     if not ret:
         break
-
+    
     # convert image to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
+    blur_image = cv2.GaussianBlur(gray, (5, 5), 0)
+    
     height, width = gray.shape
 
     # height, width, _ = img.shape
@@ -61,7 +83,7 @@ while True:
 
         if class_id < len(colors):
             color = colors[int(class_id)]
-            cv2.rectangle(gray, (x, y), (x2, y2), tuple([int(c) for c in color]) + (0,), 3)
+            cv2.rectangle(blur_image, (x, y), (x2, y2), tuple([int(c) for c in color]) + (0,), 3)
 
         # set mask coordinates
         mask_array = np.array(mask, np.uint8)
@@ -75,9 +97,9 @@ while True:
     fontScale = 1.5
     color = (255, 0, 0)  # BGR color format
     thickness = 2  
-    cv2.putText(gray, text, org, font, fontScale, color, thickness)
+    cv2.putText(blur_image, text, org, font, fontScale, color, thickness)
     
-    cv2.imshow("Mask R-CNN Output", gray)
+    cv2.imshow("Mask R-CNN Output", blur_image)
     if cv2.waitKey(1) == ord('q'):
         break
 cv2.destroyAllWindows()
