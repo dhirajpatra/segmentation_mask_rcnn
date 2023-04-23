@@ -84,7 +84,7 @@ class DetectorAPI:
 
 if __name__ == "__main__":
     model_path = (
-        "frozen_inference_graph.pb"
+        "frozen_inference_graph_coco.pb"
     )
     odapi = DetectorAPI(path_to_ckpt=model_path)
     threshold = 0.7
